@@ -11,6 +11,43 @@ you want to choose when that happens.
 
 ---
 
+## [v1.2.1](https://github.com/DigiCatalyst-Systems/dependabot-risk/releases/tag/v1.2.1) — 2026-09-04 — name unsupported ecosystems instead of 404ing
+
+A study of 2,447 merged Dependabot pull requests across 39 repositories found that 23% of package analyses were failing. They turned out to be three separate defects wearing the same error message.
+
+### Fixed
+
+- **A Gradle version-catalog alias is no longer treated as a package.** Dependabot's Gradle pull requests open with the catalog alias and list the real coordinates beneath it:
+
+  ```
+  Bumps `media3` from 1.10.1 to 1.11.0.                              ← alias
+  Updates `androidx.media3:media3-exoplayer` from 1.10.1 to 1.11.0   ← the packages
+  ```
+
+  The parser took that first line as a package, invented `media3`, and then reported failing to find it. Same for `log4j2Version`, `ksp`, `jna.version` and `ktor`.
+
+  The rule is structural rather than a guess about what a name looks like: once any `Updates` line is present, the `Bumps` line summarises them and is ignored, along with the title. A single-package pull request has no `Updates` lines and is unaffected — and `ktor` is a plausible package name, so any shape-based heuristic would eventually have been wrong.
+
+- **Maven and Gradle coordinates are named, not sent to npm.** `org.springframework:spring-core` was going to the npm registry and returning a 404. On a Java, Kotlin or Android repository *every row* read `could not check — npm registry returned 404`. Not a poor report: a table of nothing but errors, which reads as a broken action rather than an unsupported ecosystem.
+
+  A `group:artifact` coordinate is now reported as **"Maven is not supported yet — this action covers npm, PyPI and GitHub Actions"**, with one notice for the pull request rather than a warning per package.
+
+  These still count as `review`, so they never become `safe-to-automerge`. The action does not vouch for what it did not read.
+
+### Supported ecosystems
+
+**npm, PyPI and GitHub Actions.** That boundary is now stated in the README and enforced in the code, rather than being discovered by a user when a registry lookup fails.
+
+Maven support is being considered but is not close to free: OSV covers Maven well, though release notes depend on a POM's `<scm>` field, which resolves for only about half of coordinates — and following parent POMs points at the wrong repository (`log4j-core` resolves to `apache/logging-parent`, not `apache/logging-log4j2`), which would produce confidently wrong breaking-change data.
+
+---
+
+104 tests, up from 98. No behaviour change for npm, PyPI or GitHub Actions packages.
+
+Verified against the full 2,447-pull-request corpus: exactly the 11 phantom names disappear, all 11 were previously errors, and no real package is lost.
+
+---
+
 ## [v1.2.0](https://github.com/DigiCatalyst-Systems/dependabot-risk/releases/tag/v1.2.0) — 2026-09-04 — scope column, build provenance, end-to-end coverage
 
 Dependency scope moves into its own column, releases now carry build provenance you can verify, and the action finally has an end-to-end test.

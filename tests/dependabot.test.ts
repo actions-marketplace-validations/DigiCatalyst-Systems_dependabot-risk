@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseDependabotPr, isDependencyBot } from "../src/dependabot.ts";
+import { parseDependabotPr, isDependencyBot, unsupportedEcosystem } from "../src/dependabot.ts";
 
 // Fixtures below are real Dependabot output from this repository's own PRs,
 // trimmed to the lines the parser reads.
@@ -130,5 +130,54 @@ describe("isDependencyBot", () => {
 
 	it("tolerates a missing login", () => {
 		assert.equal(isDependencyBot(undefined), false);
+	});
+});
+
+// Gradle version-catalog PRs open with the catalog alias, then list the real
+// coordinates beneath it. Fixture from DimensionDev/Flare #2397.
+describe("Gradle version catalogs", () => {
+	const body = [
+		"Bumps `media3` from 1.10.1 to 1.11.0.",
+		"Updates `androidx.media3:media3-exoplayer` from 1.10.1 to 1.11.0",
+		"Updates `androidx.media3:media3-ui-compose` from 1.10.1 to 1.11.0",
+	].join("\n");
+
+	it("does not treat the catalog alias as a package", () => {
+		const names = parseDependabotPr("Bump media3 from 1.10.1 to 1.11.0", body).map((c) => c.name);
+		assert.deepEqual(names, [
+			"androidx.media3:media3-exoplayer",
+			"androidx.media3:media3-ui-compose",
+		]);
+	});
+
+	it("ignores the alias even when the title repeats it", () => {
+		const names = parseDependabotPr("build(deps-dev): bump log4j2Version from 2.26.0 to 2.26.1", [
+			"Bumps `log4j2Version` from 2.26.0 to 2.26.1.",
+			"Updates `org.apache.logging.log4j:log4j-core` from 2.26.0 to 2.26.1",
+		].join("\n")).map((c) => c.name);
+		assert.deepEqual(names, ["org.apache.logging.log4j:log4j-core"]);
+	});
+
+	it("still reads a single-package PR, which has no Updates lines", () => {
+		const out = parseDependabotPr(
+			"chore(deps): bump zod from 4.3.6 to 4.5.2",
+			"Bumps [zod](https://github.com/colinhacks/zod) from 4.3.6 to 4.5.2.\n<details>"
+		);
+		assert.deepEqual(out, [{ name: "zod", fromVersion: "4.3.6", toVersion: "4.5.2" }]);
+	});
+});
+
+describe("unsupportedEcosystem", () => {
+	it("names Maven for a group:artifact coordinate", () => {
+		assert.equal(unsupportedEcosystem("org.springframework:spring-core"), "Maven");
+		assert.equal(unsupportedEcosystem("io.ktor:ktor-client-js"), "Maven");
+		assert.equal(unsupportedEcosystem("commons-codec:commons-codec"), "Maven");
+	});
+
+	it("leaves supported ecosystems alone", () => {
+		assert.equal(unsupportedEcosystem("lodash"), undefined);
+		assert.equal(unsupportedEcosystem("@types/node"), undefined);
+		assert.equal(unsupportedEcosystem("actions/checkout"), undefined);
+		assert.equal(unsupportedEcosystem("socket.io"), undefined);
 	});
 });

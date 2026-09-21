@@ -22108,6 +22108,9 @@ function error(message, properties = {}) {
 function warning(message, properties = {}) {
   issueCommand("warning", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
+function notice(message, properties = {}) {
+  issueCommand("notice", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
+}
 function info(message) {
   process.stdout.write(message + os4.EOL);
 }
@@ -27299,6 +27302,9 @@ function isActionReference(name) {
   return name.includes("/") && !name.startsWith("@");
 }
 var clean = (v) => v.replace(/[.,;]+$/, "");
+function unsupportedEcosystem(name) {
+  return /^[^\s:/@]+:[^\s:/@]+$/.test(name) ? "Maven" : void 0;
+}
 function parseDependabotPr(title, body) {
   const found = [];
   const push = (name, from, to) => {
@@ -27308,12 +27314,14 @@ function parseDependabotPr(title, body) {
     if (isActionReference(n)) change.ecosystem = "github-actions";
     found.push(change);
   };
-  if (body) {
-    for (const m of body.matchAll(GROUPED)) push(m[1], m[2], m[3]);
-    for (const m of body.matchAll(BUMPS)) push(m[1] ?? m[2], m[3], m[4]);
+  const grouped2 = body ? [...body.matchAll(GROUPED)] : [];
+  if (grouped2.length > 0) {
+    for (const m of grouped2) push(m[1], m[2], m[3]);
+  } else {
+    if (body) for (const m of body.matchAll(BUMPS)) push(m[1] ?? m[2], m[3], m[4]);
+    const t = title.match(TITLE);
+    if (t) push(t[1] ?? t[2], t[3], t[4]);
   }
-  const t = title.match(TITLE);
-  if (t) push(t[1] ?? t[2], t[3], t[4]);
   const seen = /* @__PURE__ */ new Set();
   return found.filter((c) => !seen.has(c.name) && seen.add(c.name));
 }
@@ -27484,8 +27492,8 @@ var LOG_BANNER = [
 var MAX_COMMENT_CHARS = 6e4;
 function capForComment(body) {
   if (body.length <= MAX_COMMENT_CHARS) return body;
-  const notice = "\n\n<sub>Report truncated \u2014 it exceeded GitHub's comment size limit. The full report is in the job summary.</sub>";
-  return body.slice(0, MAX_COMMENT_CHARS - notice.length) + notice;
+  const notice2 = "\n\n<sub>Report truncated \u2014 it exceeded GitHub's comment size limit. The full report is in the job summary.</sub>";
+  return body.slice(0, MAX_COMMENT_CHARS - notice2.length) + notice2;
 }
 function highestLevel(analyses) {
   if (analyses.length === 0) return "safe";
@@ -27712,12 +27720,28 @@ async function run(overrides = {}) {
     return;
   }
   const actionCount = changes.filter((c) => c.ecosystem === "github-actions").length;
+  const unsupported = changes.filter((c) => unsupportedEcosystem(c.name));
   info(
-    `Analyzing ${changes.length} package change(s): ${changes.length - actionCount} in ${ecosystem}, ${actionCount} github-actions.`
+    `Analyzing ${changes.length} package change(s): ${changes.length - actionCount - unsupported.length} in ${ecosystem}, ${actionCount} github-actions, ${unsupported.length} unsupported.`
   );
+  if (unsupported.length > 0) {
+    notice(
+      `${unsupported.length} of ${changes.length} package(s) are ${unsupportedEcosystem(unsupported[0].name)}, which this action does not support yet. It covers npm, PyPI and GitHub Actions.`
+    );
+  }
   const octokit = deps.getOctokit(token);
   const [analyses, commitMessages] = await Promise.all([
     mapLimit(changes, CONCURRENCY, async (c) => {
+      const missing = unsupportedEcosystem(c.name);
+      if (missing) {
+        return {
+          package: c.name,
+          fromVersion: c.fromVersion,
+          toVersion: c.toVersion,
+          error: `${missing} is not supported yet \u2014 this action covers npm, PyPI and GitHub Actions.`,
+          recommendationLevel: "review"
+        };
+      }
       try {
         return await deps.analyze(
           // A slashed, unscoped name is a repository coordinate, so the name

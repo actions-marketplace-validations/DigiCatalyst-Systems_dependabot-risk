@@ -1,7 +1,12 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { analyzePackageChange } from "@digicatalyst/dep-diff-mcp/dist/analyzer.js";
-import { isDependencyBot, parseDependabotPr, type Ecosystem } from "./dependabot.ts";
+import {
+	isDependencyBot,
+	parseDependabotPr,
+	unsupportedEcosystem,
+	type Ecosystem,
+} from "./dependabot.ts";
 import { parseRenovatePr } from "./renovate.ts";
 import { parseDependabotScopes, parseRenovateScopes, type Scope } from "./scope.ts";
 import {
@@ -102,14 +107,39 @@ export async function run(overrides: Partial<Deps> = {}): Promise<void> {
 	}
 
 	const actionCount = changes.filter((c) => c.ecosystem === "github-actions").length;
+	const unsupported = changes.filter((c) => unsupportedEcosystem(c.name));
 	core.info(
 		`Analyzing ${changes.length} package change(s): ` +
-			`${changes.length - actionCount} in ${ecosystem}, ${actionCount} github-actions.`
+			`${changes.length - actionCount - unsupported.length} in ${ecosystem}, ` +
+			`${actionCount} github-actions, ${unsupported.length} unsupported.`
 	);
+	// One notice for the whole pull request. A warning per package would bury the
+	// report on a repository this action does not cover yet.
+	if (unsupported.length > 0) {
+		core.notice(
+			`${unsupported.length} of ${changes.length} package(s) are ` +
+				`${unsupportedEcosystem(unsupported[0]!.name)}, which this action does not support yet. ` +
+				"It covers npm, PyPI and GitHub Actions."
+		);
+	}
 
 	const octokit = deps.getOctokit(token);
 	const [analyses, commitMessages] = await Promise.all([
 		mapLimit(changes, CONCURRENCY, async (c): Promise<Analyzed> => {
+			// Say which ecosystem is missing rather than letting the name reach a
+			// registry that cannot possibly hold it. "npm returned 404 for
+			// org.springframework:spring-core" reads as a broken action; on a Java
+			// repository every row would say it.
+			const missing = unsupportedEcosystem(c.name);
+			if (missing) {
+				return {
+					package: c.name,
+					fromVersion: c.fromVersion,
+					toVersion: c.toVersion,
+					error: `${missing} is not supported yet — this action covers npm, PyPI and GitHub Actions.`,
+					recommendationLevel: "review",
+				};
+			}
 			try {
 				return await deps.analyze(
 					// A slashed, unscoped name is a repository coordinate, so the name

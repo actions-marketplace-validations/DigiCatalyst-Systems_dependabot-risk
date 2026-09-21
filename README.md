@@ -245,6 +245,13 @@ Both **Dependabot** and **Renovate** are read. Dependabot states each change in 
 (`` | [zod](...) | `4.3.6` -> `4.5.2` | ``), including the range operators
 (`^`, `==`, `>=`), which are stripped.
 
+**Supported ecosystems: npm, PyPI and GitHub Actions.** Anything else is named
+rather than guessed at — a Maven or Gradle coordinate like
+`org.springframework:spring-core` is reported as "Maven is not supported yet"
+instead of being sent to the npm registry, which would 404 and read as a broken
+action. Gradle version-catalog aliases (the `Bumps \`media3\`` line that
+summarises the coordinates beneath it) are not treated as packages at all.
+
 npm, PyPI, and **GitHub Actions** are analyzed. An `actions/checkout` bump needs no
 configuration: a slashed, unscoped name is a repository coordinate, so it is detected
 and routed regardless of the `ecosystem` input. This matters more than it sounds —

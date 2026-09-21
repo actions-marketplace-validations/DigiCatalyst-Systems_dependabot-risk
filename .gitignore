@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 .env
 docs/
+
+# Local working notes for coding sessions, never published
+CLAUDE.md
+.claude/

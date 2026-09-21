@@ -233,6 +233,31 @@ describe("end to end", () => {
 		assert.equal(calls.filter((c) => c.op === "addLabels" || c.op === "removeLabel").length, 0);
 	});
 
+	it("names Maven rather than sending the coordinate to npm", async () => {
+		const calls: Call[] = [];
+		const { outputs } = await runAction(
+			{
+				number: 7, title: "Bump media3 from 1.10.1 to 1.11.0",
+				body: [
+					"Bumps `media3` from 1.10.1 to 1.11.0.",
+					"Updates `androidx.media3:media3-exoplayer` from 1.10.1 to 1.11.0",
+				].join("\n"),
+				user: { login: "dependabot[bot]" }, labels: [],
+			},
+			{ label: "safe-to-automerge" },
+			{},
+			calls
+		);
+		// The catalog alias is not a package, so it never reaches the report.
+		assert.doesNotMatch(outputs.summary!, /media3` \|/);
+		assert.match(outputs.summary!, /androidx\.media3:media3-exoplayer/);
+		assert.match(outputs.summary!, /Maven is not supported yet/);
+		assert.doesNotMatch(outputs.summary!, /404/);
+		// Nothing was actually analyzed, so nothing is safe to merge unread.
+		assert.equal(outputs["safe-to-automerge"], "false");
+		assert.equal(calls.filter((c) => c.op === "addLabels").length, 0);
+	});
+
 	it("never labels a pull request it could not read", async () => {
 		const calls: Call[] = [];
 		const { outputs } = await runAction(
